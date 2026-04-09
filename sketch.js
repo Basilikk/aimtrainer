@@ -1,30 +1,35 @@
-// --- VARIABLES GLOBALES (Réduites au strict minimum) ---
 let jeu;
 let sliderSensi;
 
 // ==========================================
-// CLASSE 1 : LA CIBLE
+// CLASSE 1 : LA CIBLE (Évolutive)
 // ==========================================
 class Cible {
   constructor() {
-    this.respawn(); // Place la cible aléatoirement dès sa création
+    this.respawn();
   }
 
-  // Méthode pour (ré)apparaître
   respawn() {
     this.r = random(15, 35);
     this.x = random(this.r, width - this.r);
     this.y = random(100 + this.r, height - this.r);
   }
 
-  // Méthode pour se dessiner
-  afficher() {
-    fill('#00FF00');
+  // NOUVEAU : La couleur change selon le score !
+  obtenirCouleur(scoreActuel) {
+    if (scoreActuel < 10) return '#00FF00';      // Débutant : Vert
+    if (scoreActuel < 20) return '#FFFF00';      // Échauffé : Jaune
+    if (scoreActuel < 30) return '#FFA500';      // Rapide : Orange
+    if (scoreActuel < 40) return '#FF0000';      // Pro : Rouge
+    return '#FF00FF';                            // God Mode : Violet Néon
+  }
+
+  afficher(scoreActuel) {
+    fill(this.obtenirCouleur(scoreActuel)); // Applique la couleur dynamique
     noStroke();
     circle(this.x, this.y, this.r * 2);
   }
 
-  // Méthode pour vérifier si elle est touchée
   estTouchee(viseurX, viseurY) {
     return dist(viseurX, viseurY, this.x, this.y) < this.r;
   }
@@ -35,17 +40,14 @@ class Cible {
 // ==========================================
 class Viseur {
   constructor() {
-    this.x = width / 2;
-    this.y = height / 2;
+    this.centrer();
   }
 
-  // Méthode pour se déplacer selon la sensibilité
   mettreAJour(sensi) {
     this.x = constrain(this.x + movedX * sensi, 0, width);
     this.y = constrain(this.y + movedY * sensi, 0, height);
   }
 
-  // Méthode pour se dessiner
   afficher() {
     stroke(255);
     strokeWeight(2);
@@ -53,7 +55,6 @@ class Viseur {
     line(this.x, this.y - 15, this.x, this.y + 15);
   }
 
-  // Remet le viseur au centre
   centrer() {
     this.x = width / 2;
     this.y = height / 2;
@@ -61,14 +62,16 @@ class Viseur {
 }
 
 // ==========================================
-// CLASSE 3 : LE MOTEUR DE JEU (Game Manager)
+// CLASSE 3 : LE MOTEUR DE JEU
 // ==========================================
 class MoteurJeu {
   constructor() {
     this.cible = new Cible();
     this.viseur = new Viseur();
     this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    this.demarrerPartie();
+    
+    // NOUVEAU : On commence sur un écran d'accueil
+    this.etat = "ACCUEIL"; 
   }
 
   demarrerPartie() {
@@ -79,10 +82,12 @@ class MoteurJeu {
     this.viseur.centrer();
     this.cible.respawn();
     if (sliderSensi) sliderSensi.show();
+    
+    // On débloque l'audio du navigateur au tout premier clic
+    if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
   }
 
   jouerSonHit() {
-    if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
     const osc = this.audioCtx.createOscillator();
     const gain = this.audioCtx.createGain();
     osc.connect(gain);
@@ -97,20 +102,23 @@ class MoteurJeu {
     osc.stop(this.audioCtx.currentTime + 0.1);
   }
 
-  // Boucle principale du jeu
   gererFrame(sensi) {
-    if (this.etat === "JEU") {
+    if (this.etat === "ACCUEIL") {
+      this.afficherAccueil();
+    } 
+    else if (this.etat === "JEU") {
       this.tempsRestant -= deltaTime / 1000;
       
       if (this.tempsRestant <= 0) {
         this.terminerPartie();
       } else {
         this.viseur.mettreAJour(sensi);
-        this.cible.afficher();
+        this.cible.afficher(this.score); // On passe le score à la cible
         this.viseur.afficher();
         this.afficherHUD(sensi);
       }
-    } else if (this.etat === "FIN") {
+    } 
+    else if (this.etat === "FIN") {
       this.afficherEcranFin();
     }
   }
@@ -123,10 +131,13 @@ class MoteurJeu {
   }
 
   gererClic() {
-    if (this.etat === "JEU") {
-      requestPointerLock();
+    if (this.etat === "ACCUEIL") {
+      requestPointerLock(); // Bloque la souris
+      this.demarrerPartie(); // Lance le timer
+    } 
+    else if (this.etat === "JEU") {
+      requestPointerLock(); // Sécurité au cas où on perd le focus
       this.clics++;
-      
       if (this.cible.estTouchee(this.viseur.x, this.viseur.y)) {
         this.score++;
         this.jouerSonHit();
@@ -136,6 +147,20 @@ class MoteurJeu {
   }
 
   // --- INTERFACE ---
+  afficherAccueil() {
+    if (sliderSensi) sliderSensi.hide(); // Cache le slider au début
+    textAlign(CENTER, CENTER);
+    fill(255); noStroke();
+    textSize(50);
+    text("AIM LAB MMI", width / 2, height / 2 - 50);
+    fill('#00FF00');
+    textSize(20);
+    text("⚠️ CLIQUEZ N'IMPORTE OÙ POUR VERROUILLER LE CURSEUR ⚠️", width / 2, height / 2 + 20);
+    fill(150);
+    textSize(16);
+    text("Tirez sur les cibles. Appuyez sur Échap pour quitter.", width / 2, height / 2 + 70);
+  }
+
   afficherHUD(sensi) {
     fill(255); noStroke(); textAlign(LEFT, BASELINE); textSize(24);
     text(`Score : ${this.score}`, 180, 40);
@@ -163,22 +188,18 @@ class MoteurJeu {
 }
 
 // ==========================================
-// FONCTIONS P5.JS (Gèrent la boucle et les events)
+// FONCTIONS P5.JS
 // ==========================================
 function setup() {
   createCanvas(windowWidth, windowHeight);
   noCursor();
-  
   sliderSensi = createSlider(0.1, 3, 1, 0.1);
   sliderSensi.position(20, 20);
-  
-  // On instancie notre Moteur de Jeu
   jeu = new MoteurJeu();
 }
 
 function draw() {
   background(26);
-  // On délègue tout le travail à la classe Jeu
   jeu.gererFrame(sliderSensi.value());
 }
 
@@ -188,6 +209,8 @@ function mousePressed() {
 
 function keyPressed() {
   if (key.toLowerCase() === 'r') {
-    jeu.demarrerPartie();
+    // Si on fait R, on repasse par l'accueil pour forcer le clic de sécurité
+    jeu.etat = "ACCUEIL";
+    document.exitPointerLock(); 
   }
 }
